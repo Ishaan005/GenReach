@@ -37,6 +37,16 @@ def calculate_subjective_imporession(content):
 def calculate_readability_score(content):
     return textstat.flesch_reading_ease(content)
 
+#TODO: Find a better way to calculate structure score
+#Calculate the structure score
+def calculate_structure_score(content):
+    """Analyze content structure, looking for headers, bullet points, and paragraphs."""
+    header_count = len(re.findall(r'<h[1-6]>.*?</h[1-6]>', content, re.IGNORECASE))
+    bullet_count = len(re.findall(r'<li>.*?</li>', content, re.IGNORECASE))
+    paragraph_count = len(re.findall(r'<p>.*?</p>', content, re.IGNORECASE))
+    structure_score = min((header_count + bullet_count + paragraph_count) / 10, 1)  # Normalize
+    return structure_score
+
 @app.post("/geo_score")
 def geo_score(data:ContentQuery):
     try:
@@ -48,13 +58,22 @@ def geo_score(data:ContentQuery):
     word_count_score = calculate_word_count_score(content)
     relevance_score = calculate_relevance_score(content, query)
     subjective_score = calculate_subjective_imporession(content)
+    readability_score = calculate_readability_score(content)
+    structure_score = calculate_structure_score(content)
 
-    geo_score = (0.4 * word_count_score) + (0.4 * relevance_score) + (0.2 * subjective_score)
+    #TODO: Adjust weights
+    geo_score = (0.3 * word_count_score +
+                 0.3 * relevance_score +
+                 0.2 * subjective_score +
+                 0.1 * readability_score +
+                 0.1 * structure_score)
 
     return {
         "word_count_score": word_count_score,
-        "relevance_score": relevance_score,
+        "relevance_score": relevance_score, 
         "subjective_score": subjective_score,
+        "readability_score": readability_score,
+        "structure_score": structure_score,
         "geo_score": geo_score
     }
 
