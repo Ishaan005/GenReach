@@ -4,8 +4,14 @@ import re
 import numpy as np
 from textblob import TextBlob
 import textstat
+from sentence_transformers import SentenceTransformer
+import spacy
 
 app = FastAPI()
+
+#Load Models
+semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
+nlp = spacy.load("en_core_web_sm")
 
 #Input Schema
 class ContentQuery(BaseModel):
@@ -47,6 +53,26 @@ def calculate_structure_score(content):
     structure_score = min((header_count + bullet_count + paragraph_count) / 10, 1)  # Normalize
     return structure_score
 
+#Calculate the semantic similarity between content and query
+def calculate_semantic_similarity(content, query):
+    content_embedding = semantic_model.encode(content)
+    query_embedding = semantic_model.encode(query)
+    similarity = np.dot(content_embedding, query_embedding) / (np.linalg.norm(content_embedding) * np.linalg.norm(query_embedding))
+    return similarity
+
+#Check if entites in the query appear in the content
+def calculate_ner_score(content, query):
+    content_doc = nlp(content)
+    query_doc = nlp(query)
+
+    content_entities = {ent.text.lower() for ent in content_doc.ents}
+    query_entities = {ent.text.lower() for ent in query_doc.ents}
+    
+    matching_entites = content_entities.intersection(query_entities)
+
+    return (len(matching_entites) / len(query_entities)) if query_entities else 0
+
+
 @app.post("/geo_score")
 def geo_score(data:ContentQuery):
     try:
@@ -60,13 +86,17 @@ def geo_score(data:ContentQuery):
     subjective_score = calculate_subjective_imporession(content)
     readability_score = calculate_readability_score(content)
     structure_score = calculate_structure_score(content)
+    semantic_score = calculate_semantic_similarity(content, query)
+    ner_score = calculate_ner_score(content, query)
 
     #TODO: Adjust weights
     geo_score = (0.3 * word_count_score +
-                 0.3 * relevance_score +
-                 0.2 * subjective_score +
+                 0.2 * relevance_score +
+                 0.1 * subjective_score +
                  0.1 * readability_score +
-                 0.1 * structure_score)
+                 0.1 * structure_score + 
+                 0.1 * semantic_score +
+                 0.1 * ner_score)
 
     return {
         "word_count_score": word_count_score,
@@ -74,6 +104,8 @@ def geo_score(data:ContentQuery):
         "subjective_score": subjective_score,
         "readability_score": readability_score,
         "structure_score": structure_score,
+        "semantic_score": semantic_score,
+        "ner_score": ner_score,
         "geo_score": geo_score
     }
 
