@@ -3,6 +3,7 @@ from pydantic import BaseModel, ValidationError
 import re
 import numpy as np
 from textblob import TextBlob
+import textstat
 
 app = FastAPI()
 
@@ -31,9 +32,13 @@ def calculate_subjective_imporession(content):
 
     return np.mean([polarity, subjectivity, fluency_score]) * 100
 
+#TODO: Find a better way to calculate readability score
+#Calculate the readability score using Flesch-Kincaid.
+def calculate_readability_score(content):
+    return textstat.flesch_reading_ease(content)
+
 @app.post("/geo_score")
 def geo_score(data:ContentQuery):
-
     try:
         content = data.content
         query = data.query
