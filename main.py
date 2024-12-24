@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 import re
 import numpy as np
 from textblob import TextBlob
@@ -33,11 +33,12 @@ def calculate_subjective_imporession(content):
 
 @app.post("/geo_score")
 def geo_score(data:ContentQuery):
-    content = data.content
-    query = data.query
 
-    if not content or not query:
-        raise HTTPException(status_code=400, detail="Content and Query are required")
+    try:
+        content = data.content
+        query = data.query
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     word_count_score = calculate_word_count_score(content)
     relevance_score = calculate_relevance_score(content, query)
