@@ -1,11 +1,12 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 import re
 import numpy as np
 from textblob import TextBlob
 import textstat
 from sentence_transformers import SentenceTransformer
 import spacy
+from typing import Optional, Dict
 
 app = FastAPI()
 
@@ -17,6 +18,42 @@ nlp = spacy.load("en_core_web_sm")
 class ContentQuery(BaseModel):
     content: str
     query: str
+    weights: Optional[Dict[str, float]]
+
+    #Validation
+    @field_validator("content")
+    def validate_content(cls, value):
+        if not value.strip():
+            raise ValueError("Content cannot be empty")
+        if len(value.split()) < 10:
+            raise ValueError("Content should have at least 10 words")
+        return value
+    
+    @field_validator("query")
+    def validate_query(cls, value):
+        if not value.strip():
+            raise ValueError("Query cannot be empty")
+        if len(value.split()) < 2:
+            raise ValueError("Query should have at least 2 words")
+        return value
+    
+    @field_validator("weights")
+    def validate_weights(cls, value):
+        default_weights = {
+            "word_count_score": 0.3,
+            "relevance_score": 0.2,
+            "subjective_score": 0.1,
+            "readability_score": 0.1,
+            "structure_score": 0.1,
+            "semantic_score": 0.1,
+            "ner_score": 0.1
+        }
+        if value is None:
+            return default_weights
+        total = sum(value.values())
+        if total != 1:
+            raise ValueError(f"Sum of weights should be 1, but got {total}")
+        return {**default_weights, **value}
 
 #Caclulate normalised workd count
 def calculate_word_count_score(content):
@@ -78,6 +115,7 @@ def geo_score(data:ContentQuery):
     try:
         content = data.content
         query = data.query
+        weights = data.weights
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -89,16 +127,17 @@ def geo_score(data:ContentQuery):
     semantic_score = calculate_semantic_similarity(content, query)
     ner_score = calculate_ner_score(content, query)
 
-    #TODO: Adjust weights
-    geo_score = (0.3 * word_count_score +
-                 0.2 * relevance_score +
-                 0.1 * subjective_score +
-                 0.1 * readability_score +
-                 0.1 * structure_score + 
-                 0.1 * semantic_score +
-                 0.1 * ner_score)
+    geo_score = (
+        weights["word_count_score"] * word_count_score +
+        weights["relevance_score"] * relevance_score +
+        weights["subjective_impression_score"] * subjective_score +
+        weights["readability_score"] * readability_score +
+        weights["structure_score"] * structure_score +
+        weights["semantic_similarity_score"] * semantic_score +
+        weights["ner_score"] * ner_score
+    )
 
-    return {
+    response = {
         "word_count_score": word_count_score,
         "relevance_score": relevance_score, 
         "subjective_score": subjective_score,
@@ -108,6 +147,8 @@ def geo_score(data:ContentQuery):
         "ner_score": ner_score,
         "geo_score": geo_score
     }
+    
+    return response
 
 if __name__ == "__main__":
     import uvicorn
