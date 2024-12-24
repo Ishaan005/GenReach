@@ -40,13 +40,14 @@ class ContentQuery(BaseModel):
     @field_validator("weights")
     def validate_weights(cls, value):
         default_weights = {
-            "word_count_score": 0.3,
+            "word_count_score": 0.2,
             "relevance_score": 0.2,
             "subjective_score": 0.1,
             "readability_score": 0.1,
             "structure_score": 0.1,
             "semantic_score": 0.1,
-            "ner_score": 0.1
+            "ner_score": 0.1,
+            "dviersity_score": 0.1
         }
         if value is None:
             return default_weights
@@ -109,6 +110,25 @@ def calculate_ner_score(content, query):
 
     return (len(matching_entites) / len(query_entities)) if query_entities else 0
 
+#Analyze the tone of the content
+def analyze_tone(content):
+    tone_keywords = {
+        "formal": ["therefore", "hence", "moreover", "however", "thus"],
+        "casual": ["hey", "cool", "awesome", "pretty", "yeah"],
+        "persuasive": ["imagine", "guarantee", "proven", "effective", "success"]
+    }
+    content_lower = content.lower()
+    tone_scores = {tone: sum(content_lower.count(keyword) for keyword in keywords) for tone, keywords in tone_keywords.items()}
+    predominant_tone = max(tone_scores, key=tone_scores.get)
+    return {"predominant_tone": predominant_tone, "tone_scores": tone_scores}
+
+#Calculate the diversity os sentence structures and vocabulary in content
+def calculate_diversity_score(content):
+    sentences = [sent.text for sent in nlp(content).sents]
+    unique_sentence_structures = len(set(sentences)) / len(sentences) if sentences else 0
+    words = content.split()
+    unique_words = len(set(words)) / len(words) if words else 0
+    return np.mean([unique_sentence_structures, unique_words])
 
 @app.post("/geo_score")
 def geo_score(data:ContentQuery):
@@ -126,6 +146,9 @@ def geo_score(data:ContentQuery):
     structure_score = calculate_structure_score(content)
     semantic_score = calculate_semantic_similarity(content, query)
     ner_score = calculate_ner_score(content, query)
+    diversity_score = calculate_diversity_score(content)
+
+    tone = analyze_tone(content)
 
     geo_score = (
         weights["word_count_score"] * word_count_score +
@@ -134,7 +157,8 @@ def geo_score(data:ContentQuery):
         weights["readability_score"] * readability_score +
         weights["structure_score"] * structure_score +
         weights["semantic_similarity_score"] * semantic_score +
-        weights["ner_score"] * ner_score
+        weights["ner_score"] * ner_score +
+        weights["diversity_score"] * diversity_score
     )
 
     response = {
@@ -145,6 +169,8 @@ def geo_score(data:ContentQuery):
         "structure_score": structure_score,
         "semantic_score": semantic_score,
         "ner_score": ner_score,
+        "diversity_score": diversity_score,
+        "tone": tone,
         "geo_score": geo_score
     }
     
